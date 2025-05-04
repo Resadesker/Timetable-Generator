@@ -1,0 +1,24 @@
+# Ignore bin and obj folders
+**/bin/
+**/obj/
+**/.vs/
+
+# Ignore project files
+*.csproj
+
+# Ignore user-specific and build-related files
+*.user
+*.rsuser
+*.suo
+*.cache
+*.log
+
+# Ignore Visual Studio Code workspace settings
+.vscode/
+
+# Ignore build outputs
+**/*.dll
+**/*.exe
+**/*.pdb
+**/*.cache
+**/*.log
