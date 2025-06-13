@@ -1,111 +1,81 @@
-﻿using Backend_Generator.Model;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Backend_Generator.Data;
+using Backend_Generator.Model;
 
 namespace Backend_Generator
 {
     public class TimetableGenerator
     {
-        private static List<Lesson> Lessons = new List<Lesson>
-    {
-        new Lesson { Subject = "Math", Teacher = "Teacher X", Room = "Room 101" },
-        new Lesson { Subject = "English", Teacher = "Teacher X", Room = "Room 401" },
-        new Lesson { Subject = "Physics", Teacher = "Teacher X", Room = "Room 501" },
-        new Lesson { Subject = "History", Teacher = "Teacher X", Room = "Room 301" },
-        new Lesson { Subject = "Science", Teacher = "Teacher X", Room = "Room 201" },
-        new Lesson { Subject = "Chemistry", Teacher = "Teacher Y", Room = "Lab 1" },
-        new Lesson { Subject = "Biology", Teacher = "Teacher Y", Room = "Lab 3" },
-        new Lesson { Subject = "Geography", Teacher = "Teacher Y", Room = "Room 601" },
-        new Lesson { Subject = "Music", Teacher = "Teacher Y", Room = "Room 801" },
-        new Lesson { Subject = "Art", Teacher = "Teacher Y", Room = "Room 701" },
-        new Lesson { Subject = "Computer Science", Teacher = "Teacher Z", Room = "Room 901" },
-        new Lesson { Subject = "Literature", Teacher = "Teacher Z", Room = "Room 1001" },
-        new Lesson { Subject = "Economics", Teacher = "Teacher Z", Room = "Room 1101" },
-        new Lesson { Subject = "Philosophy", Teacher = "Teacher Z", Room = "Room 1201" },
-        new Lesson { Subject = "Physical Education", Teacher = "Teacher Z", Room = "Gym" }
-    };
-
-        private static List<string> Classes = new List<string> { "Class A", "Class B", "Class C" };
         private const int DaysPerWeek = 5;
         private const int HoursPerDay = 7;
+        private const int LessonsPerSubject = 2;
 
-        private static Dictionary<string, Dictionary<(int, int), Lesson>> classSchedules = new();
-
-        private static Dictionary<(int, int), HashSet<string>> teacherUsage = new();
-        private static Dictionary<(int, int), HashSet<string>> roomUsage = new();
-
-        public static void GenerateTimetable()
+        public static void GenerateAndSave()
         {
-            Random rng = new();
-            foreach (string cls in Classes)
-            {
-                classSchedules[cls] = new Dictionary<(int, int), Lesson>();
-            }
+            using var db = new AppDbContext();
 
-            foreach (string cls in Classes)
+            // Create DB + seed master data only once
+            db.Database.EnsureCreated();
+
+            var classes = db.Classes.ToList();
+            var lessons = db.Lessons.ToList();
+            var rng = new Random();
+
+            foreach (var cls in classes)
             {
-                foreach (Lesson lesson in Lessons)
+                foreach (var lesson in lessons)
                 {
-                    int count = 0;
-                    while (count < 2)
+                    int assigned = 0;
+                    int maxAttempts = 100; // Prevent infinite loop
+                    int attempts = 0;
+
+                    while (assigned < LessonsPerSubject && attempts < maxAttempts)
                     {
-                        var timeslot = FindAvailableTimeslot(cls, lesson, rng);
-                        if (timeslot == null)
+                        int day = rng.Next(0, DaysPerWeek);
+                        int hour = rng.Next(0, HoursPerDay);
+
+                        bool classBusy = db.Schedule.Any(e =>
+                            e.SchoolClassId == cls.Id &&
+                            e.DayOfWeek == day &&
+                            e.HourOfDay == hour);
+
+                        bool teacherBusy = db.Schedule.Any(e =>
+                            e.TeacherId == lesson.TeacherId &&
+                            e.DayOfWeek == day &&
+                            e.HourOfDay == hour);
+
+                        bool roomBusy = db.Schedule.Any(e =>
+                            e.RoomId == lesson.RoomId &&
+                            e.DayOfWeek == day &&
+                            e.HourOfDay == hour);
+
+                        if (!classBusy && !teacherBusy && !roomBusy)
                         {
-                            throw new Exception($"No available timeslot for {lesson.Subject} in {cls}");
+                            db.Schedule.Add(new ScheduleEntry
+                            {
+                                SchoolClassId = cls.Id,
+                                LessonId = lesson.Id,
+                                TeacherId = lesson.TeacherId,
+                                RoomId = lesson.RoomId,
+                                DayOfWeek = day,
+                                HourOfDay = hour
+                            });
+                            db.SaveChanges();
+                            assigned++;
                         }
 
-                        classSchedules[cls][(timeslot.Day, timeslot.Hour)] = lesson;
-                        if (!teacherUsage.ContainsKey((timeslot.Day, timeslot.Hour)))
-                            teacherUsage[(timeslot.Day, timeslot.Hour)] = new HashSet<string>();
-                        if (!roomUsage.ContainsKey((timeslot.Day, timeslot.Hour)))
-                            roomUsage[(timeslot.Day, timeslot.Hour)] = new HashSet<string>();
-
-                        teacherUsage[(timeslot.Day, timeslot.Hour)].Add(lesson.Teacher);
-                        roomUsage[(timeslot.Day, timeslot.Hour)].Add(lesson.Room);
-
-                        count++;
+                        attempts++;
                     }
+
+                    if (assigned < LessonsPerSubject)
+                    {
+                        Console.WriteLine($"Could not assign {LessonsPerSubject} lessons of {lesson.SubjectId} to {cls.Name}");
+                    }
+
                 }
             }
-
-            // Print schedule
-            foreach (var cls in Classes)
-            {
-                Console.WriteLine($"Timetable for {cls}:");
-                for (int day = 0; day < DaysPerWeek; day++)
-                {
-                    for (int hour = 0; hour < HoursPerDay; hour++)
-                    {
-                        var key = (day, hour);
-                        if (classSchedules[cls].TryGetValue(key, out var lesson))
-                        {
-                            Console.WriteLine($"Day {day + 1}, Lesson {hour + 1}: {lesson}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Day {day + 1}, Lesson {hour + 1}: Free");
-                        }
-                    }
-                }
-                Console.WriteLine();
-            }
-        }
-
-        private static Timeslot FindAvailableTimeslot(string cls, Lesson lesson, Random rng)
-        {
-            var shuffled = Enumerable.Range(0, DaysPerWeek)
-                .SelectMany(d => Enumerable.Range(0, HoursPerDay).Select(h => new Timeslot(d, h)))
-                .OrderBy(_ => rng.Next()).ToList();
-
-            foreach (var timeslot in shuffled)
-            {
-                var key = (timeslot.Day, timeslot.Hour);
-                if (classSchedules[cls].ContainsKey(key)) continue;
-                if (teacherUsage.ContainsKey(key) && teacherUsage[key].Contains(lesson.Teacher)) continue;
-                if (roomUsage.ContainsKey(key) && roomUsage[key].Contains(lesson.Room)) continue;
-                return timeslot;
-            }
-
-            return null;
         }
     }
 }
