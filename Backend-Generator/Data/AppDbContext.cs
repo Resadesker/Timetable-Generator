@@ -11,9 +11,16 @@ namespace Backend_Generator.Data
         public DbSet<Subject> Subjects { get; set; }
         public DbSet<Lesson> Lessons { get; set; }
         public DbSet<ScheduleEntry> Schedule { get; set; }
+        
+        private bool isTest;
+
+        public AppDbContext(bool isTest = false) { this.isTest = isTest; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder opts)
-            => opts.UseSqlite("Data Source=Timetable.db");
+        {
+            if (isTest) opts.UseInMemoryDatabase(databaseName: "TestTimetable");
+            else opts.UseSqlite("Data Source=Timetable.db");
+        }
 
         protected override void OnModelCreating(ModelBuilder mb)
         {
